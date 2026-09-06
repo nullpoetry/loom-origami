@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - '**'
+  pull_request:
+    paths:
+      - '**'
+
+jobs:
+  lint-and-validate:
+    name: Lint & OpenAPI validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install linters and validators
+        run: |
+          python -m pip install --upgrade pip
+          pip install yamllint openapi-spec-validator pyyaml
+
+      - name: Find OpenAPI/YAML files
+        id: find_openapi
+        run: |
+          set -e
+          files=$(git ls-files 'docs/api/**/*.yaml' || true)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$files" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: YAML lint for docs/api
+        if: ${{ steps.find_openapi.outputs.files != '' }}
+        run: |
+          echo "Running yamllint on API specs..."
+          printf '%s
+' "${{ steps.find_openapi.outputs.files }}" | while IFS= read -r f; do
+            if [ -n "$f" ]; then
+              echo "yamllint $f"
+              yamllint -f parsable "$f"
+            fi
+          done
+
+      - name: Validate OpenAPI specs
+        if: ${{ steps.find_openapi.outputs.files != '' }}
+        run: |
+          python - <<'PY'
+          import glob, yaml, sys
+          from openapi_spec_validator import validate_spec
+          files = glob.glob('docs/api/**/*.yaml', recursive=True)
+          if not files:
+              print('No OpenAPI files found under docs/api/')
+              sys.exit(0)
+          errors = 0
+          for f in files:
+              try:
+                  with open(f, 'r') as fh:
+                      spec = yaml.safe_load(fh)
+                  validate_spec(spec)
+                  print(f"{f}: OK")
+              except Exception as e:
+                  print(f"{f}: VALIDATION ERROR: {e}")
+                  errors += 1
+          if errors:
+              sys.exit(1)
+          PY
+
+      - name: No API specs found (note)
+        if: ${{ steps.find_openapi.outputs.files == '' }}
+        run: echo "No OpenAPI spec files found under docs/api/, skipping YAML & OpenAPI validation."
+
+  python-tests:
+    name: Python lint & tests
+    runs-on: ubuntu-latest
+    needs: lint-and-validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (if requirements.txt)
+        run: |
+          if [ -f requirements.txt ]; then
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt found, continuing"
+          fi
+
+      - name: Run linters (flake8) if available
+        run: |
+          if pip show flake8 >/dev/null 2>&1; then
+            echo "Running flake8"
+            flake8 || true
+          else
+            echo "flake8 not installed; skipping linter step"
+          fi
+
+      - name: Run pytest if tests/ exists
+        run: |
+          if [ -d tests ] || ls test_*.py >/dev/null 2>&1 || ls *_test.py >/dev/null 2>&1; then
+            python -m pip install pytest || true
+            pytest -q
+          else
+            echo "No tests found — skipping pytest"
+
+  build-docker:
+    name: Build Docker (if Dockerfile present)
+    runs-on: ubuntu-latest
+    needs: [lint-and-validate]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image if Dockerfile present
+        run: |
+          if [ -f Dockerfile ]; then
+            echo "Building Docker image (local tag: loom-origami:${GITHUB_SHA::7})"
+            docker build -t loom-origami:${GITHUB_SHA::7} .
+          else
+            echo "No Dockerfile found — skipping Docker build"
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    needs: [lint-and-validate]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+      - name: Run CodeQL analysis
+        uses: github/codeql-action/analyze@v3
