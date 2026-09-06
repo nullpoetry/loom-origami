@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pyyaml
+openapi-spec-validator
+yamllint
+pytest
