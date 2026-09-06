@@ -1,0 +1,39 @@
+openapi: 3.0.0
+info:
+  title: Loom Data Ingestion API
+  version: 1.0.0
+  description: API for ingesting raw and pre-processed telemetry into the Pure Byte Data Loom.
+servers:
+  - url: http://localhost:8080/loom-api
+paths:
+  /data/network-flow:
+    post:
+      summary: Ingests raw network flow data (from XDP/eBPF).
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+            example: "raw_packet_bytes..." # Pure Byte Data
+      responses:
+        '202':
+          description: Data accepted for processing.
+  /data/system-metrics:
+    post:
+      summary: Ingests structured system metrics.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timestamp: { type: string, format: date-time }
+                source_id: { type: string }
+                metric_name: { type: string }
+                value: { type: number }
+      responses:
+        '202':
+          description: Metrics accepted.

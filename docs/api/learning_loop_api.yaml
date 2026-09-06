@@ -1,0 +1,173 @@
+openapi: 3.0.0
+info:
+  title: Continuous Learning Loop API
+  version: 1.0.0
+  description: API for managing the continuous learning cycle - feedback collection, model retraining, and performance metrics.
+servers:
+  - url: http://localhost:8083/learning-api
+paths:
+  /feedback/action-outcome:
+    post:
+      summary: Records the outcome of a proposed action for learning.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action_id: { type: string, description: "ID of the proposed action from Transformer" }
+                timestamp: { type: string, format: date-time }
+                action_type: { type: string, enum: ["SCALE_OUT", "ISOLATE_POD", "RECONFIGURE_NETWORK"] }
+                expected_outcome: { type: string }
+                actual_outcome: { type: string }
+                success: { type: boolean }
+                metrics_before: { type: object, description: "System metrics before action" }
+                metrics_after: { type: object, description: "System metrics after action" }
+                anomaly_resolved: { type: boolean }
+      responses:
+        '201':
+          description: Feedback recorded and queued for model retraining.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  feedback_id: { type: string }
+                  status: { type: string, enum: ["Recorded", "Queued_for_Training"] }
+  /feedback/query:
+    post:
+      summary: Queries historical feedback for analysis.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start_time: { type: string, format: date-time }
+                end_time: { type: string, format: date-time }
+                action_type: { type: string }
+                success_only: { type: boolean }
+      responses:
+        '200':
+          description: Historical feedback records.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_records: { type: integer }
+                  success_rate: { type: number, format: float }
+                  feedback_samples: { type: array, items: { type: object } }
+  /model/retrain:
+    post:
+      summary: Triggers model retraining with accumulated feedback data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model_name: { type: string, description: "Name of the model to retrain" }
+                training_data_source: { type: string, enum: ["Recent_Feedback", "Full_History"] }
+                validation_split: { type: number, format: float, description: "Fraction of data for validation" }
+      responses:
+        '202':
+          description: Retraining job accepted and queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  training_job_id: { type: string }
+                  status: { type: string, enum: ["Queued", "In_Progress"] }
+  /model/status/{training_job_id}:
+    get:
+      summary: Gets the status of an ongoing or completed training job.
+      parameters:
+        - name: training_job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status of the training job.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+                  status: { type: string, enum: ["Queued", "In_Progress", "Completed", "Failed"] }
+                  progress_percent: { type: number, format: float }
+                  metrics: { type: object, description: "Training metrics (loss, accuracy, etc.)" }
+                  completed_at: { type: string, format: date-time }
+  /model/deploy:
+    post:
+      summary: Deploys a newly trained model to production.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                training_job_id: { type: string }
+                model_version: { type: string }
+                canary_percentage: { type: number, format: float, description: "Percentage of traffic for canary deployment" }
+                rollback_on_degradation: { type: boolean }
+      responses:
+        '200':
+          description: Model deployment initiated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deployment_id: { type: string }
+                  status: { type: string, enum: ["Deploying", "Live_Canary", "Fully_Live"] }
+                  previous_model_version: { type: string }
+  /metrics/performance:
+    get:
+      summary: Gets aggregated performance metrics for all models.
+      parameters:
+        - name: time_window
+          in: query
+          schema:
+            type: string
+            enum: ["1h", "24h", "7d", "30d"]
+            default: "24h"
+      responses:
+        '200':
+          description: Performance metrics dashboard.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  window: { type: string }
+                  total_predictions: { type: integer }
+                  accuracy: { type: number, format: float }
+                  false_positive_rate: { type: number, format: float }
+                  false_negative_rate: { type: number, format: float }
+                  avg_action_success_rate: { type: number, format: float }
+                  model_versions_active: { type: array, items: { type: string } }
+  /metrics/drift-detection:
+    get:
+      summary: Detects data drift or model performance degradation.
+      responses:
+        '200':
+          description: Data drift and degradation analysis.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drift_detected: { type: boolean }
+                  drift_score: { type: number, format: float }
+                  degradation_detected: { type: boolean }
+                  performance_change_percent: { type: number, format: float }
+                  recommended_action: { type: string, enum: ["Continue_Monitoring", "Schedule_Retrain", "Immediate_Retrain"] }

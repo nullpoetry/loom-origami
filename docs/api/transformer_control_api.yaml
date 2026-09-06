@@ -1,0 +1,56 @@
+openapi: 3.0.0
+info:
+  title: Origami Transformer Control API
+  version: 1.0.0
+  description: API for interacting with the AI Brain for analysis and action.
+servers:
+  - url: http://localhost:8081/transformer-api
+paths:
+  /analyze/anomaly:
+    post:
+      summary: Submits pre-processed data for anomaly detection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                graph_snapshot: { type: object, description: "Graph representation of system state" }
+                metrics_vector: { type: array, items: { type: number } }
+      responses:
+        '200':
+          description: Anomaly detection results.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  is_anomaly: { type: boolean }
+                  anomaly_score: { type: number }
+                  detected_pattern: { type: string }
+  /action/propose-fold:
+    post:
+      summary: Requests the Transformer to propose a "folding" action.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                anomaly_id: { type: string }
+                severity: { type: string }
+                context: { type: object }
+      responses:
+        '200':
+          description: Proposed folding action (Kubernetes CRD/policy).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_type: { type: string, enum: ["SCALE_OUT", "ISOLATE_POD", "RECONFIGURE_NETWORK"] }
+                  target_resource: { type: string }
+                  k8s_manifest: { type: object, description: "YAML for CRD or policy" }
+                  reasoning: { type: string, description: "Symbolic explanation from language garden" }
